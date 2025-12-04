@@ -7,6 +7,8 @@ float** crearMatriz(int filasNum, int colNum);
 void liberarMatriz(float** matriz, int filasNum);
 void prodMatriz(int n, int m, int l, float** matrizA, float** matrizB, float** matrizR);
 void copiarMatriz(int filasNum, int colNum, float** matrizNueva, float** matrizCopiada);
+void initZerosM(float** matriz, int filasNum, int colNum);
+void initZerosV(float* v, int n);
 
 // Fuentes de calor
 float calor_1Gauss(float x, float y, float t);

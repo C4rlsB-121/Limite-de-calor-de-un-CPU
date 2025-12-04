@@ -38,8 +38,23 @@ void prodMatriz(int n, int m, int l, float** matrizA, float** matrizB, float** m
 
 void copiarMatriz(int filasNum, int colNum, float** matrizNueva, float** matrizCopiada){
 	for (int i = 0; i < filasNum; i++){
-		for (int j = 0; j < filasNum; j++){
+		for (int j = 0; j < colNum; j++){
 			matrizNueva[i][j] = matrizCopiada[i][j];
 		}
 	}
+}
+
+
+void initZerosM(float** matriz, int filNum, int colNum){
+        for (int i = 0; i < filNum; i++){
+                for (int j = 0; j < colNum; j++){
+                        matriz[i][j] = 0.0;
+                }
+        }
+
+}
+
+
+void initZerosV(float* v, int n){
+	for (int i = 0; i < n; i++) v[i] = 0;
 }
