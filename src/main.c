@@ -195,6 +195,15 @@ for (int n = 0; n <  nt + 1 ; n++){
 	// Actualizamos el halo
 	halo_Update(k1, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
 
+	// Calculamos K2
+	for (int j = 1; j < local_Ny; j++){
+                for (int i = 1; i < local_Nx+1; i++){
+                        k1[local_Ny + 1 - j][i] = r*(u_prev[local_Ny + 1 - j][i - 1] + 0.5*k1[local_Ny + 1 - j][i -1]) - 4*r*(u_prev[local_Ny + 1 - j][i] + 0.5*k1[local_Ny + 1 -j][i]) +
+			r*(u_prev[local_Ny + 1 - j][i+1] + 0.5*k1[local_Ny + 1 - j][i + 1]) + r*(u_prev[local_Ny + 1 - j - 1][i] + k1[local_Ny + 1 - j - 1][i]) +
+			r*(u_prev[local_Ny + 1 - j + 1][i] + 0.5*k1[local_Ny + 1 - j +1][i]) + emision( inicio_x + (i-1)*dx, inicio_y + (j-1)*dy, (n+0.5)*dt);
+                }
+        }
+
 
 
 
