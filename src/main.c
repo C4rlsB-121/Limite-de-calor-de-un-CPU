@@ -130,6 +130,7 @@ initZerosV(recv_right, local_Ny);
 initZerosV(recv_up, local_Nx);
 initZerosV(recv_down, local_Nx);
 
+int num_requests;
 
 //	Ciclo Temporal	//
 for (int n = 0; n <  nt + 1 ; n++){
@@ -155,7 +156,7 @@ for (int n = 0; n <  nt + 1 ; n++){
 		}
 	}
 // Los demas nodos usando método de lineas particularmente RK 4 //
-	// K1
+	//  ------------------------ K1 ---------------------//
 	for (int j = 1; j < local_Ny; j++){
 		for (int i = 1; i < local_Nx+1; i++){
 			k1[local_Ny + 1 - j][i] = r*u_prev[local_Ny + 1 - j][i - 1] - 4*r*u_prev[local_Ny + 1 - j][i] + r*u_prev[local_Ny + 1 - j][i+1]
@@ -169,40 +170,149 @@ for (int n = 0; n <  nt + 1 ; n++){
 
 
 	// Comunicación
-	MPI_Request requests[8];
-	int num_request = 0;
-
+        MPI_Request requests_k1[8];
+        num_requests = 0;
 	if (left > -1){ // Tiene vecino izquierdo
-		MPI_Isend(send_left, local_Ny, MPI_FLOAT, left, 0, MPI_COMM_WORLD, &requests[num_request++] );
-		MPI_Irecv(recv_left, local_Ny, MPI_FLOAT, left, 1, MPI_COMM_WORLD, &requests[num_request++] );
+		MPI_Isend(send_left, local_Ny, MPI_FLOAT, left, 0, MPI_COMM_WORLD, &requests_k1[num_requests++] );
+		MPI_Irecv(recv_left, local_Ny, MPI_FLOAT, left, 1, MPI_COMM_WORLD, &requests_k1[num_requests++] );
 	}
 	if (right > -1){ // Tiene vecino derecho
-		MPI_Isend(send_right, local_Ny, MPI_FLOAT, right, 1, MPI_COMM_WORLD, &requests[num_request++] );
-                MPI_Irecv(recv_right, local_Ny, MPI_FLOAT, right, 0, MPI_COMM_WORLD, &requests[num_request++] );
+		MPI_Isend(send_right, local_Ny, MPI_FLOAT, right, 1, MPI_COMM_WORLD, &requests_k1[num_requests++] );
+                MPI_Irecv(recv_right, local_Ny, MPI_FLOAT, right, 0, MPI_COMM_WORLD, &requests_k1[num_requests++] );
         }
 	if (up > -1){ // Tiene vecino superior
-		MPI_Isend(send_up, local_Nx, MPI_FLOAT, up, 2, MPI_COMM_WORLD, &requests[num_request++] );
-                MPI_Irecv(recv_up, local_Nx, MPI_FLOAT, up, 3, MPI_COMM_WORLD, &requests[num_request++] );
+		MPI_Isend(send_up, local_Nx, MPI_FLOAT, up, 2, MPI_COMM_WORLD, &requests_k1[num_requests++] );
+                MPI_Irecv(recv_up, local_Nx, MPI_FLOAT, up, 3, MPI_COMM_WORLD, &requests_k1[num_requests++] );
         }
 	if (down > -1){ // Tiene vecino inferior
-		MPI_Isend(send_down, local_Nx, MPI_FLOAT, down, 3, MPI_COMM_WORLD, &requests[num_request++] );
-                MPI_Irecv(recv_down, local_Nx, MPI_FLOAT, down, 2, MPI_COMM_WORLD, &requests[num_request++] );
+		MPI_Isend(send_down, local_Nx, MPI_FLOAT, down, 3, MPI_COMM_WORLD, &requests_k1[num_requests++] );
+                MPI_Irecv(recv_down, local_Nx, MPI_FLOAT, down, 2, MPI_COMM_WORLD, &requests_k1[num_requests++] );
         }
 
 	// Esperamos a los procesos
-	MPI_Waitall(num_request, requests, MPI_STATUSES_IGNORE);
+	MPI_Waitall(num_requests, requests_k1, MPI_STATUSES_IGNORE);
 
 	// Actualizamos el halo
 	halo_Update(k1, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
 
-	// Calculamos K2
+	// -----------------------  K2 -------------------------------------- //
 	for (int j = 1; j < local_Ny; j++){
                 for (int i = 1; i < local_Nx+1; i++){
-                        k1[local_Ny + 1 - j][i] = r*(u_prev[local_Ny + 1 - j][i - 1] + 0.5*k1[local_Ny + 1 - j][i -1]) - 4*r*(u_prev[local_Ny + 1 - j][i] + 0.5*k1[local_Ny + 1 -j][i]) +
-			r*(u_prev[local_Ny + 1 - j][i+1] + 0.5*k1[local_Ny + 1 - j][i + 1]) + r*(u_prev[local_Ny + 1 - j - 1][i] + k1[local_Ny + 1 - j - 1][i]) +
-			r*(u_prev[local_Ny + 1 - j + 1][i] + 0.5*k1[local_Ny + 1 - j +1][i]) + emision( inicio_x + (i-1)*dx, inicio_y + (j-1)*dy, (n+0.5)*dt);
+                        k2[local_Ny + 1 - j][i] = r*(u_prev[local_Ny + 1 - j][i - 1] + 0.5*dt*k1[local_Ny + 1 - j][i -1]) - 4*r*(u_prev[local_Ny + 1 - j][i] + 0.5*dt*k1[local_Ny + 1 -j][i]) +
+			r*(u_prev[local_Ny + 1 - j][i+1] + 0.5*dt*k1[local_Ny + 1 - j][i + 1]) + r*(u_prev[local_Ny + 1 - j - 1][i] + 0.5*dt*k1[local_Ny + 1 - j - 1][i]) +
+			r*(u_prev[local_Ny + 1 - j + 1][i] + 0.5*dt*k1[local_Ny + 1 - j +1][i]) + emision( inicio_x + (i-1)*dx, inicio_y + (j-1)*dy, (n+0.5)*dt);
                 }
         }
+
+	// Armar array a enviar
+        preparar_envio(k2, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
+
+
+        // Comunicación
+        MPI_Request requests_k2[8];
+        num_requests = 0;
+        if (left > -1){ // Tiene vecino izquierdo
+                MPI_Isend(send_left, local_Ny, MPI_FLOAT, left, 0, MPI_COMM_WORLD, &requests_k2[num_requests++] );
+                MPI_Irecv(recv_left, local_Ny, MPI_FLOAT, left, 1, MPI_COMM_WORLD, &requests_k2[num_requests++] );
+        }
+        if (right > -1){ // Tiene vecino derecho
+                MPI_Isend(send_right, local_Ny, MPI_FLOAT, right, 1, MPI_COMM_WORLD, &requests_k2[num_requests++] );
+                MPI_Irecv(recv_right, local_Ny, MPI_FLOAT, right, 0, MPI_COMM_WORLD, &requests_k2[num_requests++] );
+        }
+        if (up > -1){ // Tiene vecino superior
+                MPI_Isend(send_up, local_Nx, MPI_FLOAT, up, 2, MPI_COMM_WORLD, &requests_k2[num_requests++] );
+                MPI_Irecv(recv_up, local_Nx, MPI_FLOAT, up, 3, MPI_COMM_WORLD, &requests_k2[num_requests++] );
+        }
+        if (down > -1){ // Tiene vecino inferior
+                MPI_Isend(send_down, local_Nx, MPI_FLOAT, down, 3, MPI_COMM_WORLD, &requests_k2[num_requests++] );
+                MPI_Irecv(recv_down, local_Nx, MPI_FLOAT, down, 2, MPI_COMM_WORLD, &requests_k2[num_requests++] );
+        }
+
+        // Esperamos a los procesos
+        MPI_Waitall(num_requests, requests_k2, MPI_STATUSES_IGNORE);
+
+        // Actualizamos el halo
+        halo_Update(k2, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
+
+	// ------------------------------------- K3 ----------------------------- //
+        for (int j = 1; j < local_Ny; j++){
+                for (int i = 1; i < local_Nx+1; i++){
+                        k3[local_Ny + 1 - j][i] = r*(u_prev[local_Ny + 1 - j][i - 1] + 0.5*dt*k2[local_Ny + 1 - j][i -1]) - 4*r*(u_prev[local_Ny + 1 - j][i] + 0.5*dt*k2[local_Ny + 1 -j][i]) +
+                        r*(u_prev[local_Ny + 1 - j][i+1] + 0.5*dt*k2[local_Ny + 1 - j][i + 1]) + r*(u_prev[local_Ny + 1 - j - 1][i] +0.5*dt*k2[local_Ny + 1 - j - 1][i]) +
+                        r*(u_prev[local_Ny + 1 - j + 1][i] + 0.5*dt*k2[local_Ny + 1 - j +1][i]) + emision( inicio_x + (i-1)*dx, inicio_y + (j-1)*dy, (n+0.5)*dt);
+                }
+        }
+
+        // Armar array a enviar
+        preparar_envio(k3, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
+
+
+        // Comunicación
+        MPI_Request requests_k3[8];
+        num_requests = 0;
+        if (left > -1){ // Tiene vecino izquierdo
+                MPI_Isend(send_left, local_Ny, MPI_FLOAT, left, 0, MPI_COMM_WORLD, &requests_k3[num_requests++] );
+                MPI_Irecv(recv_left, local_Ny, MPI_FLOAT, left, 1, MPI_COMM_WORLD, &requests_k3[num_requests++] );
+        }
+        if (right > -1){ // Tiene vecino derecho
+                MPI_Isend(send_right, local_Ny, MPI_FLOAT, right, 1, MPI_COMM_WORLD, &requests_k3[num_requests++] );
+                MPI_Irecv(recv_right, local_Ny, MPI_FLOAT, right, 0, MPI_COMM_WORLD, &requests_k3[num_requests++] );
+        }
+        if (up > -1){ // Tiene vecino superior
+                MPI_Isend(send_up, local_Nx, MPI_FLOAT, up, 2, MPI_COMM_WORLD, &requests_k3[num_requests++] );
+                MPI_Irecv(recv_up, local_Nx, MPI_FLOAT, up, 3, MPI_COMM_WORLD, &requests_k3[num_requests++] );
+        }
+        if (down > -1){ // Tiene vecino inferior
+                MPI_Isend(send_down, local_Nx, MPI_FLOAT, down, 3, MPI_COMM_WORLD, &requests_k3[num_requests++] );
+                MPI_Irecv(recv_down, local_Nx, MPI_FLOAT, down, 2, MPI_COMM_WORLD, &requests_k3[num_requests++] );
+        }
+
+        // Esperamos a los procesos
+        MPI_Waitall(num_requests, requests_k3, MPI_STATUSES_IGNORE);
+
+        // Actualizamos el halo
+        halo_Update(k3, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
+
+
+	// ------------------------------------- K4 ----------------------------- //
+        for (int j = 1; j < local_Ny; j++){
+                for (int i = 1; i < local_Nx+1; i++){
+                        k4[local_Ny + 1 - j][i] = r*(u_prev[local_Ny + 1 - j][i - 1] + dt*k3[local_Ny + 1 - j][i -1]) - 4*r*(u_prev[local_Ny + 1 - j][i] + dt*k3[local_Ny + 1 -j][i]) +
+                        r*(u_prev[local_Ny + 1 - j][i+1] + dt*k1[local_Ny + 1 - j][i + 1]) + r*(u_prev[local_Ny + 1 - j - 1][i] + dt*k3[local_Ny + 1 - j - 1][i]) +
+                        r*(u_prev[local_Ny + 1 - j + 1][i] + dt*k3[local_Ny + 1 - j +1][i]) + emision( inicio_x + (i-1)*dx, inicio_y + (j-1)*dy, (n+1)*dt);
+                }
+        }
+
+        // Armar array a enviar
+        preparar_envio(k4, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
+
+
+        // Comunicación
+        MPI_Request requests_k4[8];
+        num_requests = 0;
+
+        if (left > -1){ // Tiene vecino izquierdo
+                MPI_Isend(send_left, local_Ny, MPI_FLOAT, left, 0, MPI_COMM_WORLD, &requests_k4[num_requests++] );
+                MPI_Irecv(recv_left, local_Ny, MPI_FLOAT, left, 1, MPI_COMM_WORLD, &requests_k4[num_requests++] );
+        }
+        if (right > -1){ // Tiene vecino derecho
+                MPI_Isend(send_right, local_Ny, MPI_FLOAT, right, 1, MPI_COMM_WORLD, &requests_k4[num_requests++] );
+                MPI_Irecv(recv_right, local_Ny, MPI_FLOAT, right, 0, MPI_COMM_WORLD, &requests_k4[num_requests++] );
+        }
+        if (up > -1){ // Tiene vecino superior
+                MPI_Isend(send_up, local_Nx, MPI_FLOAT, up, 2, MPI_COMM_WORLD, &requests_k4[num_requests++] );
+                MPI_Irecv(recv_up, local_Nx, MPI_FLOAT, up, 3, MPI_COMM_WORLD, &requests_k4[num_requests++] );
+        }
+        if (down > -1){ // Tiene vecino inferior
+                MPI_Isend(send_down, local_Nx, MPI_FLOAT, down, 3, MPI_COMM_WORLD, &requests_k4[num_requests++] );
+                MPI_Irecv(recv_down, local_Nx, MPI_FLOAT, down, 2, MPI_COMM_WORLD, &requests_k4[num_requests++] );
+        }
+
+        // Esperamos a los procesos
+        MPI_Waitall(num_requests, requests_k4, MPI_STATUSES_IGNORE);
+
+        // Actualizamos el halo
+        halo_Update(k4, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
 
 
 
