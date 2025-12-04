@@ -13,12 +13,14 @@
 #define Tf 1800
 #define dt 30 // Tamaño de paos temporal
 
+#define num_frames 2 //100
+
 // -------------- Funciones ------------------- //
 void preparar_envio(float** matrizOrigen, int local_Ny, int local_Nx, int left, int right, int up, int down,
 		 float* send_left, float* send_right, float* send_up, float* send_down);
 void halo_Update(float** subMatriz, int local_Ny, int local_Nx, int left, int right, int up, int down,
                  float* recv_left, float* recv_right, float* recv_up, float* recv_down);
-
+void save_ppm_frame(const char* filename, float** data, int n_filas, int n_columnas);
 // ------------------------------- Main --------------------------------- //
 int main(){
 
@@ -40,6 +42,7 @@ float r = a / (dx * dy);
 int tipo_emision = 4;
 
 float nt = (float)Tf / (float)dt;
+int frame_time = (nt + 1) / (int)num_frames;
 
 float (*emision)(float, float, float);
 switch (tipo_emision){
@@ -48,8 +51,8 @@ switch (tipo_emision){
 	case 3: emision = calor_3Gauss;
 	case 4: emision = calor_4GaussSparced;
 }
-
 MPI_Init(NULL, NULL);
+float t1 = MPI_Wtime();
 comm_estd = MPI_COMM_WORLD; // Comunicador estandar por defecto
 MPI_Comm_rank(comm_estd, &rank);
 MPI_Comm_size(comm_estd, &size);
@@ -314,10 +317,23 @@ for (int n = 0; n <  nt + 1 ; n++){
         // Actualizamos el halo
         halo_Update(k4, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
 
+        // Damos el paso
+        for (int j = 0; j < local_Ny; j++){
+                for (int i = 0; i < local_Ny; i++){
+                        u[local_Ny - j][i] = u_prev[local_Ny - j][i] + dt/6 * (k1[local_Ny - j][i] + k2[local_Ny - j][i] + k3[local_Ny - j][i] + k4[local_Ny - j][i]);
+                        }
+                }
 
+        copiarMatriz(local_Ny + 2, local_Nx + 2, u_prev, u);
 
-
-
+        // Animación
+        if (size && rank == 0){
+                if (n % frame_time == 0){
+                        char filename[100];
+                        sprintf(filename, "frame_%06d", n/frame_time);
+                        save_ppm_frame(filename, u, local_Ny + 2, local_Nx + 2);
+                }
+        }
 }
 
 //printf("%f\n", u[0][1]);
@@ -353,6 +369,11 @@ free(recv_right);
 free(recv_up);
 free(recv_down);
 
+MPI_Barrier(MPI_COMM_WORLD);
+float t2 = MPI_Wtime();
+float time = t2 - t1;
+if (rank == 0) printf("----------------------------------------------------\nTiempo de ejecución con %d nucleos: %f\n-------------------------------------------------------\n", size, time);
+
 MPI_Finalize();
 } // End main
 
@@ -385,7 +406,62 @@ void halo_Update(float** subMatriz, int local_Ny, int local_Nx, int left, int ri
 }
 
 
+void save_ppm_frame(const char* filename, float** data, int n_filas, int n_columnas){
+        FILE *fp = fopen(filename, "wb");
+        fprintf(fp, "P6\n");
+        fprintf(fp, "%d %d\n", n_columnas, n_filas);  // Ancho, Alto
+        fprintf(fp, "255\n");
 
-void saveImg(int rank){
-	if (rank != 0) return;
+        float min_val = data[0][0];
+        float max_val = data[0][0];
+
+        for (int j = 0; j < n_filas; j++) {
+                for (int i = 0; i < n_columnas; i++) {
+                        if (data[j][i] < min_val) min_val = data[j][i];
+                        if (data[j][i] > max_val) max_val = data[j][i];
+                }
+        }
+
+    float range = max_val - min_val;
+        if (range == 0) range = 1.0f; // Evitar divisionn por 0
+
+        // Escribir datos de píxeles
+        for (int j = 0; j < n_filas; j++) {
+                for (int i = 0; i < n_columnas; i++) {
+                        float valor = data[j][i];
+
+                        // Normalizar
+                        valor = (valor - min_val) / range;
+                        valor = fmaxf(0.0f, fminf(1.0f, valor));  // Usar fmaxf/fminf para float
+
+                        unsigned char r, g, b;
+
+                        // Mapa de colores azul -> verde -> rojo
+                        if (valor < 0.25f) {
+                                r = 0;
+                                g = (unsigned char)(valor / 0.25f * 255);
+                                b = 255;
+                        }
+                        else if (valor < 0.5f) {
+                                r = 0;
+                                g = 255;
+                                b = (unsigned char)((0.5f - valor) / 0.25f * 255);
+                        }
+                        else if (valor < 0.75f) {
+                                r = (unsigned char)((valor - 0.5f) / 0.25f * 255);
+                                g = 255;
+                                b = 0;
+                        }
+                        else {
+                                r = 255;
+                                g = (unsigned char)((1.0f - valor) / 0.25f * 255);
+                                b = 0;
+                        }
+
+                        fwrite(&r, 1, 1, fp);
+                        fwrite(&g, 1, 1, fp);
+                        fwrite(&b, 1, 1, fp);
+                }
+        }
+        fclose(fp);
 }
