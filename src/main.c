@@ -3,7 +3,7 @@
 #include<mpi.h> // Division del dominio
 #include"header.h" // Enlazar funciones y objetos declarados en los demás archivos
 
-#define Nx 22 // Numero de puntos en el cerrado por eje
+#define Nx 11 // Numero de puntos en el cerrado por eje
 #define Ny Nx
 #define xmin 0  // Determinar espacio del dominio
 #define xmax 1
@@ -13,7 +13,8 @@
 #define Tf 1800
 #define dt 30 // Tamaño de paos temporal
 
-#define num_frames 2 //100
+#define num_frames 100
+#define animate 1
 
 // -------------- Funciones ------------------- //
 void preparar_envio(float** matrizOrigen, int local_Ny, int local_Nx, int left, int right, int up, int down,
@@ -29,7 +30,6 @@ float ancho = xmax - xmin;
 float alto = ymax - ymin;
 float dx = ancho / ((float)Nx - 1);
 float dy = alto / ((float)Ny - 1);
-int n_pts = Nx*Ny;
 int my_coords[2];
 MPI_Comm comm_estd, comm_cart;
 
@@ -40,6 +40,7 @@ float eta = 180;
 float T_out = 25;
 float r = a / (dx * dy);
 int tipo_emision = 4;
+float T_limite = 100;
 
 float nt = (float)Tf / (float)dt;
 int frame_time = (nt + 1) / (int)num_frames;
@@ -86,7 +87,6 @@ float inicio_y = (float)inicio_ny * dy;
 	*/
 if (coord_i == nprocs_x - 1) local_Nx = Nx - inicio_nx;
 if (coord_j == nprocs_y - 1) local_Ny = Ny - inicio_ny;
-int local_size = local_Nx * local_Ny;
 
 // Vemos vecinos //
 int up, down, right, left;
@@ -105,7 +105,6 @@ for (int i = 0; i <local_Nx + 2; i++){
 }
 float** u_prev = crearMatriz(local_Ny+2, local_Nx+2);
 copiarMatriz(local_Ny+2, local_Nx+2, u_prev, u);
-
 //// pasos de RK
 float** k1 = crearMatriz(local_Ny + 2, local_Nx + 2);
 float** k2 = crearMatriz(local_Ny + 2, local_Nx + 2);
@@ -318,22 +317,32 @@ for (int n = 0; n <  nt + 1 ; n++){
         halo_Update(k4, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
 
         // Damos el paso
+        
         for (int j = 0; j < local_Ny; j++){
                 for (int i = 0; i < local_Ny; i++){
-                        u[local_Ny - j][i] = u_prev[local_Ny - j][i] + dt/6 * (k1[local_Ny - j][i] + k2[local_Ny - j][i] + k3[local_Ny - j][i] + k4[local_Ny - j][i]);
+                        u[local_Ny - j][i] = u_prev[local_Ny - j][i] + dt/6 * (k1[local_Ny - j][i] + 2*k2[local_Ny - j][i] + 2*k3[local_Ny - j][i] + k4[local_Ny - j][i]);
                         }
                 }
-
+        
         copiarMatriz(local_Ny + 2, local_Nx + 2, u_prev, u);
 
+        // Vemos que no se haya pasado el limite
+        for (int j = 2; j < local_Ny; j++){
+                for (int i = 2; i < local_Nx; i++){
+                        if (u[j][i] > T_limite) printf("%f\n", u[j][i]);// printf("Peligro: se ha alcanzado la temperatura máxima permitida en %d\n", dt*n);
+                }
+        }
+
+        /*
         // Animación
-        if (size && rank == 0){
+        if (size && animate && rank == 0){
                 if (n % frame_time == 0){
                         char filename[100];
-                        sprintf(filename, "frame_%06d", n/frame_time);
+                        sprintf(filename, "frames/frame_%06d", n/frame_time);
                         save_ppm_frame(filename, u, local_Ny + 2, local_Nx + 2);
                 }
         }
+        */
 }
 
 //printf("%f\n", u[0][1]);
