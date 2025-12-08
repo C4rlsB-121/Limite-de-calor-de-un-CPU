@@ -135,17 +135,70 @@ initZerosV(recv_up, local_Nx);
 initZerosV(recv_down, local_Nx);
 
 int num_requests; // Para barrera
-//	Ciclo Temporal	//
+//	Ciclo de tiempo	//
 for (int n = 0; n <  nt + 1 ; n++){
     upd_ghost_nodes(u, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
 
-	//  ------------------------ K1 ---------------------//
-	for (int j = 0; j < local_Ny; j++){
-		for (int i = 0; i < local_Nx; i++){
-			k1[local_Ny - j][i+1] = dt*( r*(- 4*u[local_Ny - j][i+1] + u[local_Ny - j][i] + u[local_Ny - j][i+2]
-							+ u[local_Ny - (j + 1)][i+1] + u[local_Ny - (j - 1)][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, n*dt) );
-		}
-	}
+    //  ------------------------ K1 ---------------------//
+    for (int j = 0; j < local_Ny; j++){
+        for (int i = 0; i < local_Nx; i++){
+            k1[local_Ny - j][i+1] = dt*( r*(- 4*u[local_Ny - j][i+1] + u[local_Ny - j][i] + u[local_Ny - j][i+2]
+                    + u[local_Ny - (j + 1)][i+1] + u[local_Ny - (j - 1)][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, n*dt) );
+        }
+    }
+    // Paso temporal 1
+    for (int j = 1; j < local_Ny+1; j++){
+        for (int i = 1; i < local_Nx+1; i++){
+            u_step1[j][i] = u[j][i] + 0.5*k1[j][i];
+        }
+    }
+    upd_ghost_nodes(u_step1, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
+
+    //  ------------------------ K2 ---------------------//
+    for (int j = 0; j < local_Ny; j++){
+        for (int i = 0; i < local_Nx; i++){
+            k2[local_Ny - j][i+1] = dt*( r*(- 4*u_step1[local_Ny - j][i+1] + u_step1[local_Ny - j][i] + u_step1[local_Ny - j][i+2]
+                    + u_step1[local_Ny - (j + 1)][i+1] + u_step1[local_Ny - (j - 1)][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, (n+0.5)*dt) );
+        }
+    }
+    // Paso temporal 2
+    for (int j = 1; j < local_Ny+1; j++){
+        for (int i = 1; i < local_Nx+1; i++){
+            u_step2[j][i] = u[j][i] + 0.5*k2[j][i];
+        }
+    }
+    upd_ghost_nodes(u_step2, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
+
+    //  ------------------------ K3 ---------------------//
+    for (int j = 0; j < local_Ny; j++){
+        for (int i = 0; i < local_Nx; i++){
+            k3[local_Ny - j][i+1] = dt*( r*(- 4*u_step2[local_Ny - j][i+1] + u_step2[local_Ny - j][i] + u_step2[local_Ny - j][i+2]
+                    + u_step2[local_Ny - (j + 1)][i+1] + u_step2[local_Ny - (j - 1)][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, (n+0.5)*dt) );
+        }
+    }
+    // Paso temporal 3
+    for (int j = 1; j < local_Ny+1; j++){
+        for (int i = 1; i < local_Nx+1; i++){
+            u_step3[j][i] = u[j][i] + k3[j][i];
+        }
+    }
+    upd_ghost_nodes(u_step3, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
+
+    //  ------------------------ K4 ---------------------//
+    for (int j = 0; j < local_Ny; j++){
+        for (int i = 0; i < local_Nx; i++){
+            k4[local_Ny - j][i+1] = dt*( r*(- 4*u_step3[local_Ny - j][i+1] + u_step3[local_Ny - j][i] + u_step3[local_Ny - j][i+2]
+                    + u_step3[local_Ny - (j + 1)][i+1] + u_step3[local_Ny - (j - 1)][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, (n+1)*dt) );
+        }
+    }
+
+    // Paso
+    for (int j = 1; j < local_Ny+1; j++){
+        for (int i = 1; i < local_Nx+1; i++){
+            u[j][i] += (k1[j][i] + 2*k2[j][i] + 2*k3[j][i] + 2*k4[j][i]) / 6;
+        }
+    }
+
 
 
 	// Armar array a enviar
