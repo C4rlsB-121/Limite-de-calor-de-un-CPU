@@ -1,46 +1,30 @@
 #include"header.h"
 #include<math.h>
 
-float calor_1Gauss(float x, float y, float t){
-	float valor;
-	if (t <= 30 && t < 1200){
-		valor = exp(- (x-0.5)*(x-0.5) + (y-0.5)*(y-0.5) ) / (2*0.01);
-	}
-	else{
-		valor = 0;
-	}
-	return valor;
-}
-
-float calor_1Flat(float x, float y, float t){
-	if ((x >= 0.4 && x <= 0.6) && (y >= 0.4 && y <= 0.6)){
-		return 1;
-	}
-	return 0;
+float calor_3Flat(float x, float y, float t){
+	float g1=0, g2=0, g3=0;
+	if (0.1 >= x && x<=0.3 && 0.4>=y && y<=0.6) g1 = 0.2;
+	if (0.4 >= x && x<=0.6 && 0.4>=y && y<=0.6) g2 = 0.2;
+	if (0.7 >= x && x<=0.9 && 0.4>=y && y<=0.6) g3 = 0.2;
+	return g1+g2+g3;
 }
 
 
-float calor_3Gauss(float x, float y, float t){
-	float v1, v2, v3;
-	float v = 0;
-	if ( t>120 && t< 1600){
-		v1 = exp(- (x-0.25)*(x-0.25) + (y-0.75)*(y-0.75) ) / (2*0.01);
-		v2 = exp(- (x-0.5)*(x-0.5) + (y-0.5)*(y-0.5) ) / (2*0.01);
-		v3 = exp(- (x-0.75)*(x-0.75) + (y-0.75)*(y-0.75) ) / (2*0.01);
-		v = v1 + v2 + v3;
-	}
-	return v;
+float calor_3GaussUp(float x, float y, float t){
+	float g1=0, g2=0, g3=0;
+	if (t<=1200) g1 = 0.3*exp( -((x-0.25)*(x-0.25) + (y-0.75)*(y-0.75)) / (2*(0.1)*(0.1)) );
+	if (t<=900) g2 = 0.3*exp( -((x-0.5)*(x-0.25) + (y-0.75)*(y-0.75)) / (2*(0.1)*(0.1)) );
+	g3 = 0.3*exp( -((x-0.25)*(x-0.75) + (y-0.75)*(y-0.75)) / (2*(0.1)*(0.1)) );
+	return g1+g2+g3;
 }
 
 
 float calor_4GaussSparced(float x, float y, float t){
-	float v1 = 0, v2 = 0, v3 = 0, v4 = 0;
-	float v;
-	if (100 < t && t < 1100) v1 = exp(- 0.4*(x-0.5)*(x-0.5) + (y-0.5)*(y-0.5) ) / (2*0.01);
-	if (400 < t && t < 1000) v2 = exp(- 0.3*(x-0.5)*(x-0.5) + (y-0.5)*(y-0.5) ) / (2*0.01);
-	if (900 < t && t < 1600) v3 = exp(- 0.6*(x-0.5)*(x-0.5) + (y-0.5)*(y-0.5) ) / (2*0.01);
-	if (t < 200 && t < 900)  v4 = exp(- 0.7*(x-0.5)*(x-0.5) + (y-0.5)*(y-0.5) ) / (2*0.01);
-	v = v1 + v2 + v3 + v4;
-	return v;
+	float g1=0, g2=0, g3=0, g4=0;
+	if (t < 1200) g1 = 0.2*exp( -((x-0.2)*(x-0.2) + (y-0.8)*(y-0.8)) / (2*(0.1)*(0.1)) );
+	if (t > 600) g2 = 0.2*exp( -((x-0.2)*(x-0.2) + (y-0.2)*(y-0.2)) / (2*(0.1)*(0.1)) );
+	if ( 900 < t && t < 1600) g3 = 0.2*exp( -((x-0.8)*(x-0.8) + (y-0.8)*(y-0.8)) / (2*(0.1)*(0.1)) );
+	if (t < 1450)  g4 = 0.2*exp( -((x-0.8)*(x-0.8) + (y-0.2)*(y-0.2)) / (2*(0.1)*(0.1)) );
+	return g1+g2+g3+g4;
 
 }

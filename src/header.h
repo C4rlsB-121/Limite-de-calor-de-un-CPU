@@ -11,7 +11,6 @@ void initZerosM(float** matriz, int filasNum, int colNum);
 void initZerosV(float* v, int n);
 
 // Fuentes de calor
-float calor_1Gauss(float x, float y, float t);
-float calor_1Flat(float x, float y, float t);
-float calor_3Gauss(float x, float y, float t);
+float calor_3Flat(float x, float y, float t);
+float calor_3GaussUp(float x, float y, float t);
 float calor_4GaussSparced(float x, float y, float t);
