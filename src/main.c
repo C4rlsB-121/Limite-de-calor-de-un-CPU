@@ -11,7 +11,7 @@
 #define ymax 1
 
 #define Tf 1800
-#define dt 30 // Tamaño de paos temporal
+#define dt 30 // Tamaño de paso temporal
 #define tipo_calor 1
 
 #define num_frames 100
@@ -20,13 +20,18 @@
 // -------------- Funciones ------------------- //
 void show_domain(int size, int rank, int local_Nx, int local_Ny, int inicio_nx, int inicio_ny,
                  float dx, float dy);
-void set_emision(float (*emision)(float, float, float), int tipo_emision);
+void set_emision(float (**emision)(float, float, float), int tipo_emision);
+void init_cond(float** u, int altura, int anchura, float T_out);
+void upd_ghost_nodes(float** u, int local_Ny, int local_Nx, float dy, float dx,
+                     int left, int right, int up, int down,
+                     float eta, float k, float T_out);
 void preparar_envio(float** matrizOrigen, int local_Ny, int local_Nx, int left, int right, int up, int down,
 		 float* send_left, float* send_right, float* send_up, float* send_down);
 void halo_Update(float** subMatriz, int local_Ny, int local_Nx, int left, int right, int up, int down,
                  float* recv_left, float* recv_right, float* recv_up, float* recv_down);
 void save_ppm_frame(const char* filename, float** data, int n_filas, int n_columnas);
-// ------------------------------- Main --------------------------------- //
+
+// ___________________________------------------------------- Main -----------__________---------------------- //
 int main(){
 
 int rank, size;
@@ -45,16 +50,15 @@ float T_out = 25;
 float r = a / (dx * dy);
 int tipo_emision = 4;
 float T_limite = 100;
-float (*emision)(float, float, float);
-set_emision(emision, tipo_calor);
-
+float (*emision)(float, float, float) = NULL;
+set_emision(&emision, tipo_calor);
 
 float nt = (float)Tf / (float)dt;
 int frame_time = (nt + 1) / (int)num_frames;
 
-MPI_Init(NULL, NULL);
+MPI_Init(NULL, NULL); // --------------------- Inicio MPI
 float t1 = MPI_Wtime();
-comm_estd = MPI_COMM_WORLD; // Comunicador estandar por defecto
+comm_estd = MPI_COMM_WORLD;
 MPI_Comm_rank(comm_estd, &rank);
 MPI_Comm_size(comm_estd, &size);
 
@@ -78,8 +82,6 @@ int inicio_nx = Nx_pN * coord_i;
 int inicio_ny = Ny_pN * coord_j;
 float inicio_x = (float)inicio_nx * dx;
 float inicio_y = (float)inicio_ny * dy;
-//printf("Rank %d tiene inicios: (%f,%f)\n", rank, inicio_x, inicio_y);
-//printf("Rank %d tiene coordenadas (%d, %d)\n", rank, local_Nx, local_Ny);
 
 	/*
 ´	 Puede que no a todos los procesos se les asigne la misma cantidad de puntos en la malla
@@ -88,30 +90,28 @@ float inicio_y = (float)inicio_ny * dy;
 if (coord_i == nprocs_x - 1) local_Nx = Nx - inicio_nx;
 if (coord_j == nprocs_y - 1) local_Ny = Ny - inicio_ny;
 
+int fin_ny = inicio_ny + local_Ny;
+
 // Vemos vecinos //
 int up, down, right, left;
 MPI_Cart_shift(comm_cart, 0, 1, &left, &right);
 MPI_Cart_shift(comm_cart, 1, 1, &down, &up);
 
-// Definiciones necesarias para el metodo de lineas //
-
+// -------------------------------------- Definiciones necesarias para el metodo de lineas --------------------- //
+float s = a / (dx*dx);
 
 //// Condiciones Iniciales en subcuadriculas con nodos fantasma y halo
 float** u = crearMatriz(local_Ny + 2, local_Nx + 2);
-/*
-for (int i = 0; i <local_Nx + 2; i++){
-        for (int j = 0; j < local_Ny + 2; j++){
-                u[0][0] = T_out;
-        }
-}
-*/
-float** u_prev = crearMatriz(local_Ny+2, local_Nx+2);
-//copiarMatriz(local_Ny+2, local_Nx+2, u_prev, u);
+init_cond(u, local_Ny+2, local_Nx+2, T_out);
+
 //// pasos de RK
 float** k1 = crearMatriz(local_Ny + 2, local_Nx + 2);
 float** k2 = crearMatriz(local_Ny + 2, local_Nx + 2);
 float** k3 = crearMatriz(local_Ny + 2, local_Nx + 2);
 float** k4 = crearMatriz(local_Ny + 2, local_Nx + 2);
+float** u_step1 = crearMatriz(local_Ny + 2, local_Nx + 2);
+float** u_step2 = crearMatriz(local_Ny + 2, local_Nx + 2);
+float** u_step3 = crearMatriz(local_Ny + 2, local_Nx + 2);
 
 
 //// vectores a enviar y recibir
@@ -125,52 +125,28 @@ float* recv_right = malloc(local_Ny * sizeof(float));
 float* recv_up = malloc(local_Nx * sizeof(float));
 float* recv_down = malloc(local_Nx * sizeof(float));
 
-//initZerosV(send_left, local_Ny);
-//initZerosV(send_right, local_Ny);
-//initZerosV(send_up, local_Nx);
-//initZerosV(send_down, local_Nx);
-//initZerosV(recv_left, local_Ny);
-//initZerosV(recv_right, local_Ny);
-//initZerosV(recv_up, local_Nx);
-//initZerosV(recv_down, local_Nx);
+initZerosV(send_left, local_Ny);
+initZerosV(send_right, local_Ny);
+initZerosV(send_up, local_Nx);
+initZerosV(send_down, local_Nx);
+initZerosV(recv_left, local_Ny);
+initZerosV(recv_right, local_Ny);
+initZerosV(recv_up, local_Nx);
+initZerosV(recv_down, local_Nx);
 
-int num_requests;
-
+int num_requests; // Para barrera
 //	Ciclo Temporal	//
 for (int n = 0; n <  nt + 1 ; n++){
-    /*
-// Nodos fantasma
-	if (down < 0){ // Frontera inferior
-		for (int i = 0; i < local_Nx; i++){
-			u[local_Ny + 1][i + 1] = u[local_Ny-1][i + 1] + (2*dy*eta) / k * (T_out - u[local_Ny][i +1]);
-		}
-	}
-	if (up < 0){ // Frontera superior
-		for (int i = 0; i < local_Nx; i++){
-			u[0][i + 1] = u[2][i + 1] + (2*dy*eta) / k * (T_out - u[1][i + 1]);
-		}
-	}
-	if (left < 0){ // Frontera Izquierda
-		for (int j = 0; j < local_Ny; j++){
-			u[j + 1][0] = u[j + 1][2] + (2*dx*eta) / k * (T_out - u[j + 1][1]);
-		}
-	}
-	if (right < 0){ // Frontera Derecha
-		for (int j = 0; j < local_Ny; j++){
-			u[j + 1][local_Nx + 1] = u[j + 1][Nx - 1] + (2*dx*eta) / k * (T_out - u[j + 1][local_Nx]);
-		}
-	}
-	*/
-	/*
-// Los demas nodos usando método de lineas particularmente RK 4 //
+    upd_ghost_nodes(u, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
+
 	//  ------------------------ K1 ---------------------//
-	for (int j = 1; j < local_Ny; j++){
-		for (int i = 1; i < local_Nx+1; i++){
-			k1[local_Ny + 1 - j][i] = r*u_prev[local_Ny + 1 - j][i - 1] - 4*r*u_prev[local_Ny + 1 - j][i] + r*u_prev[local_Ny + 1 - j][i+1]
-							+ r*u_prev[local_Ny + 1 - j - 1][i] + r*u_prev[local_Ny + 1 - j + 1][i] + emision( inicio_x + (i-1)*dx, inicio_y + (j-1)*dy, n*dt);
+	for (int j = 0; j < local_Ny; j++){
+		for (int i = 0; i < local_Nx; i++){
+			k1[local_Ny - j][i+1] = dt*( r*(- 4*u[local_Ny - j][i+1] + u[local_Ny - j][i] + u[local_Ny - j][i+2]
+							+ u[local_Ny - (j + 1)][i+1] + u[local_Ny - (j - 1)][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, n*dt) );
 		}
 	}
-	*/
+
 
 	// Armar array a enviar
 	//preparar_envio(k1, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
@@ -243,12 +219,14 @@ for (int n = 0; n <  nt + 1 ; n++){
 
 //show_domain(size, rank, local_Nx, local_Ny, inicio_nx, inicio_ny, dx, dy);
 
-liberarMatriz(u, local_Ny + 2);
-liberarMatriz(u_prev, local_Ny+2);
+liberarMatriz(u, local_Ny+2);
 liberarMatriz(k1, local_Ny+2);
 liberarMatriz(k2, local_Ny+2);
 liberarMatriz(k3, local_Ny+2);
 liberarMatriz(k4, local_Ny+2);
+liberarMatriz(u_step1, local_Ny+2);
+liberarMatriz(u_step2, local_Ny+2);
+liberarMatriz(u_step3, local_Ny+2);
 free(send_left);
 free(send_right);
 free(send_up);
@@ -267,29 +245,46 @@ MPI_Finalize();
 } // End main
 
 
-void show_domain(int size, int rank,  int local_Nx, int local_Ny, int inicio_nx, int inicio_ny,
-                 float dx, float dy){
-        // Vemos dominio
-        for (int k = 0; k<size; k++){
-                if (rank == k){
-                        for (int i = 0; i < local_Nx; i++){
-                                for (int j = 0; j < local_Ny; j++) {
-                                        printf("(x,y)=(%f,%f)\n num nodos=%d \n", (inicio_nx+i) * dx, (inicio_ny+j) * dy, local_Nx*local_Ny);
-                                }
-                        }
-                printf("\n");
-                }
-                MPI_Barrier(MPI_COMM_WORLD);
+void set_emision(float (**emision)(float, float, float), int tipo_emision){
+        switch (tipo_emision){
+        case 1: *emision = calor_3Flat; break;
+        case 2: *emision = calor_3GaussUp; break;
+        case 3: *emision = calor_4GaussSparced; break;
         }
 }
 
-void set_emision(float (*emision)(float, float, float), int tipo_emision){
-        switch (tipo_emision){
-        case 1: emision = calor_3Flat;
-        case 2: emision = calor_3GaussUp;
-        case 3: emision = calor_4GaussSparced;
+void init_cond(float** u, int altura, int anchura, float T_out){
+        for (int j = 0; j < altura; j++){
+                for (int i = 0; i < anchura; i++) u[j][i] = T_out;
         }
 }
+
+
+void upd_ghost_nodes(float** u, int local_Ny, int local_Nx, float dy, float dx,
+                     int left, int right, int up, int down,
+                     float eta, float k, float T_out){
+        if (down < 0){ // Frontera inferior
+                for (int i = 0; i < local_Nx; i++){
+                        u[local_Ny + 1][i + 1] = u[local_Ny-1][i + 1] + (2*dy*eta) / k * (T_out - u[local_Ny][i +1]);
+                }
+        }
+        if (up < 0){ // Frontera superior
+                for (int i = 0; i < local_Nx; i++){
+                        u[0][i + 1] = u[2][i + 1] + (2*dy*eta) / k * (T_out - u[1][i + 1]);
+                }
+        }
+        if (left < 0){ // Frontera Izquierda
+                for (int j = 0; j < local_Ny; j++){
+                        u[j + 1][0] = u[j + 1][2] + (2*dx*eta) / k * (T_out - u[j + 1][1]);
+                }
+        }
+        if (right < 0){ // Frontera Derecha
+                for (int j = 0; j < local_Ny; j++){
+                        u[j + 1][local_Nx + 1] = u[j + 1][Nx - 1] + (2*dx*eta) / k * (T_out - u[j + 1][local_Nx]);
+                }
+        }
+}
+
 
 void preparar_envio(float** matrizOrigen, int local_Ny, int local_Nx, int left, int right, int up, int down,
 		    float* send_left, float* send_right, float* send_up, float* send_down){
@@ -313,6 +308,23 @@ void halo_Update(float** subMatriz, int local_Ny, int local_Nx, int left, int ri
 		if (down > -1){
 			for (int i = 0; i < local_Nx; i++) subMatriz[local_Ny + 1][i + 1] = recv_down[i];
 		}
+}
+
+
+void show_domain(int size, int rank,  int local_Nx, int local_Ny, int inicio_nx, int inicio_ny,
+                 float dx, float dy){
+        // Vemos dominio
+        for (int k = 0; k<size; k++){
+                if (rank == k){
+                        for (int i = 0; i < local_Nx; i++){
+                                for (int j = 0; j < local_Ny; j++) {
+                                        printf("(x,y)=(%f,%f)\n num nodos=%d \n", (inicio_nx+i) * dx, (inicio_ny+j) * dy, local_Nx*local_Ny);
+                                }
+                        }
+                printf("\n");
+                }
+                MPI_Barrier(MPI_COMM_WORLD);
+        }
 }
 
 
