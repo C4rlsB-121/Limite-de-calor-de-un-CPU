@@ -3,7 +3,7 @@
 #include<mpi.h> // Division del dominio
 #include"header.h" // Enlazar funciones y objetos declarados en los demás archivos
 
-#define Nx 20 // Numero de puntos en el cerrado por eje
+#define Nx 9 // Numero de puntos en el cerrado por eje
 #define Ny Nx
 #define xmin 0  // Determinar espacio del dominio
 #define xmax 1
@@ -14,7 +14,7 @@
 #define dt 0.01 // Tamaño de paso temporal
 #define tipo_calor 3
 
-#define num_frames 100
+#define num_frames 1800
 #define animate 1
 
 // -------------- Funciones ------------------- //
@@ -93,18 +93,39 @@ int main(){
     if (coord_j == nprocs_y - 1) local_Ny = Ny - inicio_ny;
 
     int fin_ny = inicio_ny + local_Ny;
+    int int_size = local_Ny * local_Nx;
 
     // Vemos vecinos //
     int up, down, right, left;
     MPI_Cart_shift(comm_cart, 0, 1, &left, &right);
     MPI_Cart_shift(comm_cart, 1, 1, &down, &up);
 
+
+    // Info de los otros procesos
+    int world_Ny[size];
+    int world_Nx[size];
+    int worldCoord_i[size];
+    int worldCoord_j[size];
+    int world_intSizes[size];
+    int world_incio_nx[size];
+    int world_incio_ny[size];
+    if (animate){
+        MPI_Gather(&local_Ny, 1, MPI_INT, world_Ny, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Gather(&local_Nx, 1, MPI_INT, world_Nx, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Gather(&coord_i, 1, MPI_INT, worldCoord_i, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Gather(&coord_j, 1, MPI_INT, worldCoord_j, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        for (int i = 0; i < size; i++){
+            world_intSizes[i] = world_Ny[i]*world_Nx[i];
+            world_incio_nx[i] = Nx_pN * worldCoord_i[i];
+            world_incio_ny[i] = Nx_pN * worldCoord_j[i];
+        }
+    }
+
     // -------------------------------------- Definiciones necesarias para el metodo de lineas --------------------- //
 
     //// Condiciones Iniciales en subcuadriculas con nodos fantasma y halo
     float** u = crearMatriz(local_Ny + 2, local_Nx + 2);
     init_cond(u, local_Ny+2, local_Nx+2, T_out);
-    int u_size = (local_Ny+2)*(local_Nx+2);
     //// pasos de RK
     float** k1 = crearMatriz(local_Ny + 2, local_Nx + 2);
     float** k2 = crearMatriz(local_Ny + 2, local_Nx + 2);
@@ -226,22 +247,47 @@ int main(){
         if (animate){
 
                 float** u_world;
+                float* u_world_flat;
+                int displs[size]; // Para determinar en que posicion de u_world_flat debe integrarse
+
                 // Juntamos en uno grande
                 if (rank == 0) {
                     u_world = crearMatriz(Ny, Nx);
+                    u_world_flat = malloc(Ny*Nx*sizeof(float));
+
+                    // Determinar desplazamiento
+                    displs[0] = 0;
+                    for (int i = 1; i < size; i++){
+                    displs[i] = displs[i-1] + world_intSizes[i-1];
+                    }
                 }
-                //MPI_Gather(u, u_size, float);
+
+                float* u_flat = malloc(int_size * sizeof(float));
+                flat_interior(u, local_Ny+2, local_Nx+2, u_flat);
+
+                MPI_Gatherv(u_flat, int_size, MPI_FLOAT, u_world_flat, world_intSizes, displs, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
 
                 if (rank == 0){
+                    // Reconstruir la matriz 2D
+                    for (int j = 0; j < Ny; j++){
+                        for (int i = 0; i < Nx; i++){
+                            u_world[j][i] = u_world_flat[j*Nx+i];
+                        }
+                    }
+
+
+
+                    // Exportar frames
                         if (n % frame_time == 0){
                                 char filename[100];
-                                sprintf(filename, "frames/frame_%06d", n/frame_time);
-                                save_ppm_frame(filename, u , local_Ny, local_Nx);
+                                sprintf(filename, "frames/frame_%06d.ppm", n/frame_time);
+                                save_ppm_frame(filename, u_world , Ny, Nx);
                         }
                 }
-
+                free(u_flat);
                 if (rank == 0) {
+                    free(u_world_flat);
                     liberarMatriz(u_world, Ny);
                 }
         }
@@ -274,7 +320,6 @@ int main(){
     MPI_Finalize();
 } // End main
 
-void flat_interior(){}
 
 void set_emision(float (**emision)(float, float, float), int tipo_emision){
         switch (tipo_emision){
@@ -384,6 +429,8 @@ void show_domain(int size, int rank,  int local_Nx, int local_Ny, int inicio_nx,
                 MPI_Barrier(MPI_COMM_WORLD);
         }
 }
+
+//void juntar_flat_to_world(float** u_world, );
 
 
 void save_ppm_frame(const char* filename, float** data, int n_filas, int n_columnas){
