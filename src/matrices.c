@@ -58,3 +58,13 @@ void initZerosM(float** matriz, int filNum, int colNum){
 void initZerosV(float* v, int n){
 	for (int i = 0; i < n; i++) v[i] = 0;
 }
+
+void flat_Interior(float** matriz, int filasNum, int colNum,  float* v_flat){
+        for (int j = 0; j < filasNum; j++){
+                for (int i = 0; i < colNum; i++){
+                        v_flat[j*(colNum) + i] = matriz[j+1][i+1];
+                }
+        }
+
+
+}
