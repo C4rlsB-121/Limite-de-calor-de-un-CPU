@@ -9,7 +9,7 @@ void prodMatriz(int n, int m, int l, float** matrizA, float** matrizB, float** m
 void copiarMatriz(int filasNum, int colNum, float** matrizNueva, float** matrizCopiada);
 void initZerosM(float** matriz, int filasNum, int colNum);
 void initZerosV(float* v, int n);
-void flat_Interior(float** matriz, int filasNum, int colNum, float* v_flat);
+void flat_interior(float** matriz, int filasNum, int colNum, float* v_flat);
 
 // Fuentes de calor
 float calor_3Flat(float x, float y, float t);
