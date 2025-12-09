@@ -11,7 +11,7 @@
 #define ymax 1
 
 #define Tf 1800
-#define dt 0.01 // Tamaño de paso temporal
+#define dt 1 // Tamaño de paso temporal
 #define tipo_calor 3
 
 #define num_frames 180
@@ -92,7 +92,6 @@ int main(){
     if (coord_i == nprocs_x - 1) local_Nx = Nx - inicio_nx;
     if (coord_j == nprocs_y - 1) local_Ny = Ny - inicio_ny;
 
-    int fin_ny = inicio_ny + local_Ny;
     int int_size = local_Ny * local_Nx;
 
     // Vemos vecinos //
@@ -117,7 +116,7 @@ int main(){
         for (int i = 0; i < size; i++){
             world_intSizes[i] = world_Ny[i]*world_Nx[i];
             world_incio_nx[i] = Nx_pN * worldCoord_i[i];
-            world_incio_ny[i] = Nx_pN * worldCoord_j[i];
+            world_incio_ny[i] = Ny_pN * worldCoord_j[i];
         }
     }
 
@@ -158,16 +157,17 @@ int main(){
 
     //	Ciclo de tiempo	//
     for (int n = 0; n <  nt + 1 ; n++){
+        upd_ghost_nodes(u, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
+
         info_exchange(MPI_COMM_WORLD, u, local_Ny, local_Nx, left, right, up, down,
                     send_left, send_right, send_up, send_down, recv_left, recv_right, recv_up, recv_down);
         halo_Update(u, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
-        upd_ghost_nodes(u, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
 
         //  ------------------------ K1 ---------------------//
         for (int j = 0; j < local_Ny; j++){
             for (int i = 0; i < local_Nx; i++){
-                k1[local_Ny - j][i+1] = dt*( r*(- 4*u[local_Ny - j][i+1] + u[local_Ny - j][i] + u[local_Ny - j][i+2]
-                        + u[local_Ny - (j + 1)][i+1] + u[local_Ny - (j - 1)][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, n*dt) );
+                k1[j+1][i+1] = dt*( r*(- 4*u[j+1][i+1] + u[j+1][i] + u[j+1][i+2]
+                        + u[j][i+1] + u[j+2][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, n*dt) );
             }
         }
         // Paso temporal 1
@@ -177,17 +177,17 @@ int main(){
             }
         }
         // Intercambio entre subdominios
+        upd_ghost_nodes(u_step1, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
+
         info_exchange(MPI_COMM_WORLD, u_step1, local_Ny, local_Nx, left, right, up, down,
                     send_left, send_right, send_up, send_down, recv_left, recv_right, recv_up, recv_down);
         halo_Update(u_step1, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
 
-        upd_ghost_nodes(u_step1, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
-
         //  ------------------------ K2 ---------------------//
         for (int j = 0; j < local_Ny; j++){
             for (int i = 0; i < local_Nx; i++){
-                k2[local_Ny - j][i+1] = dt*( r*(- 4*u_step1[local_Ny - j][i+1] + u_step1[local_Ny - j][i] + u_step1[local_Ny - j][i+2]
-                        + u_step1[local_Ny - (j + 1)][i+1] + u_step1[local_Ny - (j - 1)][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, (n+0.5)*dt) );
+                k2[j+1][i+1] = dt*( r*(- 4*u_step1[j+1][i+1] + u_step1[j+1][i] + u_step1[j+1][i+2]
+                        + u_step1[j][i+1] + u_step1[j+2][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, (n+0.5)*dt) );
             }
         }
         // Paso temporal 2
@@ -197,18 +197,18 @@ int main(){
             }
         }
         // Intercambio entre subdominios
+        upd_ghost_nodes(u_step2, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
+
         info_exchange(MPI_COMM_WORLD, u_step2, local_Ny, local_Nx, left, right, up, down,
                     send_left, send_right, send_up, send_down, recv_left, recv_right, recv_up, recv_down);
         halo_Update(u_step2, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
-
-        upd_ghost_nodes(u_step2, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
 
 
         //  ------------------------ K3 ---------------------//
         for (int j = 0; j < local_Ny; j++){
             for (int i = 0; i < local_Nx; i++){
-                k3[local_Ny - j][i+1] = dt*( r*(- 4*u_step2[local_Ny - j][i+1] + u_step2[local_Ny - j][i] + u_step2[local_Ny - j][i+2]
-                        + u_step2[local_Ny - (j + 1)][i+1] + u_step2[local_Ny - (j - 1)][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, (n+0.5)*dt) );
+                k3[j+1][i+1] = dt*( r*(- 4*u_step2[j+1][i+1] + u_step2[j+1][i] + u_step2[j+1][i+2]
+                        + u_step2[j][i+1] + u_step2[j+2][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, (n+0.5)*dt) );
             }
         }
         // Paso temporal 3
@@ -218,17 +218,17 @@ int main(){
             }
         }
         // Intercambio entre subdominios
+        upd_ghost_nodes(u_step3, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
+
         info_exchange(MPI_COMM_WORLD, u_step3, local_Ny, local_Nx, left, right, up, down,
                     send_left, send_right, send_up, send_down, recv_left, recv_right, recv_up, recv_down);
         halo_Update(u_step3, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
 
-        upd_ghost_nodes(u_step3, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
-
         //  ------------------------ K4 ---------------------//
         for (int j = 0; j < local_Ny; j++){
             for (int i = 0; i < local_Nx; i++){
-                k4[local_Ny - j][i+1] = dt*( r*(- 4*u_step3[local_Ny - j][i+1] + u_step3[local_Ny - j][i] + u_step3[local_Ny - j][i+2]
-                        + u_step3[local_Ny - (j + 1)][i+1] + u_step3[local_Ny - (j - 1)][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, (n+1)*dt) );
+                k4[j+1][i+1] = dt*( r*(- 4*u_step3[j+1][i+1] + u_step3[j+1][i] + u_step3[j+1][i+2]
+                        + u_step3[j][i+1] + u_step3[j+2][i+1] ) + emision( inicio_x + i*dx, inicio_y + j*dy, (n+1)*dt) );
             }
         }
 
@@ -243,55 +243,67 @@ int main(){
         avisar_limiteT(u, local_Ny, local_Nx, T_limite, n*dt);
         //printf("\n");
 
-        if (n % 10000 == 0 && rank == 0) printf("n=%d: %f\n",n,u[2][2]);
 
-        // Animación
-        if (animate){
 
-                float** u_world;
-                float* u_world_flat;
-                int displs[size]; // Para determinar en que posicion de u_world_flat debe integrarse
+        if (animate) {
+            float** u_world;
+            float* u_world_flat;
+            int displs[size];
 
-                // Juntamos en uno grande
-                if (rank == 0) {
-                    u_world = crearMatriz(Ny, Nx);
-                    u_world_flat = malloc(Ny*Nx*sizeof(float));
+            // Juntamos en uno grande
+            if (rank == 0) {
 
-                    // Determinar desplazamiento
-                    displs[0] = 0;
-                    for (int i = 1; i < size; i++){
-                    displs[i] = displs[i-1] + world_intSizes[i-1];
+                // Matriz del dominio completo
+                u_world = crearMatriz(Ny, Nx);
+
+                u_world_flat = malloc(Ny * Nx * sizeof(float));
+
+                // Saber donde iniciara cada subdominio en el arreglo plano
+                displs[0] = 0;
+                for (int i = 1; i < size; i++) {
+                    displs[i] = displs[i - 1] + world_intSizes[i - 1];
+                }
+            }
+
+            float *u_flat = malloc(int_size * sizeof(float));
+            flat_interior(u, local_Ny + 2, local_Nx + 2, u_flat);
+
+            // Lo enviamos al rank 0
+            MPI_Gatherv(u_flat, int_size, MPI_FLOAT, u_world_flat, world_intSizes, displs, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
+            free(u_flat);
+
+            // Reconstruccion de la matriz del dominio completo
+            if (rank == 0) {
+
+                // Consideramos el acomodo cartesiano de los procesos
+                for (int p = 0; p < size; p++) {
+                    int alto = world_Ny[p];
+                    int ancho = world_Nx[p];
+                    int start_y = world_incio_ny[p];
+                    int start_x = world_incio_nx[p];
+
+                    float* index = u_world_flat + displs[p];
+                    for (int j = 0; j < alto; j++) {
+                        for (int i = 0; i < ancho; i++) {
+                            u_world[ Ny - 1 - (start_y + j)][start_x + i] =
+                                index[(alto-1-j) * ancho + i];
+                        }
                     }
                 }
 
-                float* u_flat = malloc(int_size * sizeof(float));
-                flat_interior(u, local_Ny+2, local_Nx+2, u_flat);
-
-                MPI_Gatherv(u_flat, int_size, MPI_FLOAT, u_world_flat, world_intSizes, displs, MPI_FLOAT, 0, MPI_COMM_WORLD);
-
-
-                if (rank == 0){
-                    // Reconstruir la matriz 2D
-                    for (int j = 0; j < Ny; j++){
-                        for (int i = 0; i < Nx; i++){
-                            u_world[j][i] = u_world_flat[j*Nx+i];
-                        }
-                    }
-
-
-
-                    // Exportar frames
-                        if (n % frame_time == 0){
-                                char filename[100];
-                                sprintf(filename, "frames/frame_%06d.ppm", n/frame_time);
-                                save_ppm_frame(filename, u_world , Ny, Nx);
-                        }
+                // 4) Guardar frame
+                if (n % frame_time == 0) {
+                    char filename[100];
+                    sprintf(filename, "frames/frame_%06d.ppm", n / frame_time);
+                    save_ppm_frame(filename, u_world, Ny, Nx);
                 }
-                free(u_flat);
-                if (rank == 0) {
+
+                if (rank==0){
                     free(u_world_flat);
                     liberarMatriz(u_world, Ny);
                 }
+            }
         }
     }
 
