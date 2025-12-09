@@ -3,7 +3,7 @@
 #include<mpi.h> // Division del dominio
 #include"header.h" // Enlazar funciones y objetos declarados en los demás archivos
 
-#define Nx 9 // Numero de puntos en el cerrado por eje
+#define Nx 20 // Numero de puntos en el cerrado por eje
 #define Ny Nx
 #define xmin 0  // Determinar espacio del dominio
 #define xmax 1
@@ -14,7 +14,7 @@
 #define dt 0.01 // Tamaño de paso temporal
 #define tipo_calor 3
 
-#define num_frames 1800
+#define num_frames 180
 #define animate 1
 
 // -------------- Funciones ------------------- //
@@ -33,8 +33,8 @@ void info_exchange(MPI_Comm comm, float** matrizOrigen, int local_Ny, int local_
 void halo_Update(float** subMatriz, int local_Ny, int local_Nx, int left, int right, int up, int down,
                  float* recv_left, float* recv_right, float* recv_up, float* recv_down);
 void save_ppm_frame(const char* filename, float** data, int n_filas, int n_columnas);
-
-// ___________________________------------------------------- Main -----------__________---------------------- //
+void avisar_limiteT(float** u, int local_Ny, float local_Nx, float T_limite, float t);
+// ------------------------------------------------- Main --------------------------------------- //
 int main(){
 
     int rank, size;
@@ -158,6 +158,9 @@ int main(){
 
     //	Ciclo de tiempo	//
     for (int n = 0; n <  nt + 1 ; n++){
+        info_exchange(MPI_COMM_WORLD, u, local_Ny, local_Nx, left, right, up, down,
+                    send_left, send_right, send_up, send_down, recv_left, recv_right, recv_up, recv_down);
+        halo_Update(u, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
         upd_ghost_nodes(u, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
 
         //  ------------------------ K1 ---------------------//
@@ -173,12 +176,12 @@ int main(){
                 u_step1[j][i] = u[j][i] + 0.5*k1[j][i];
             }
         }
-        upd_ghost_nodes(u_step1, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
-
         // Intercambio entre subdominios
         info_exchange(MPI_COMM_WORLD, u_step1, local_Ny, local_Nx, left, right, up, down,
                     send_left, send_right, send_up, send_down, recv_left, recv_right, recv_up, recv_down);
         halo_Update(u_step1, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
+
+        upd_ghost_nodes(u_step1, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
 
         //  ------------------------ K2 ---------------------//
         for (int j = 0; j < local_Ny; j++){
@@ -193,12 +196,12 @@ int main(){
                 u_step2[j][i] = u[j][i] + 0.5*k2[j][i];
             }
         }
-        upd_ghost_nodes(u_step2, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
-
         // Intercambio entre subdominios
         info_exchange(MPI_COMM_WORLD, u_step2, local_Ny, local_Nx, left, right, up, down,
                     send_left, send_right, send_up, send_down, recv_left, recv_right, recv_up, recv_down);
         halo_Update(u_step2, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
+
+        upd_ghost_nodes(u_step2, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
 
 
         //  ------------------------ K3 ---------------------//
@@ -214,12 +217,12 @@ int main(){
                 u_step3[j][i] = u[j][i] + k3[j][i];
             }
         }
-        upd_ghost_nodes(u_step3, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
-
         // Intercambio entre subdominios
         info_exchange(MPI_COMM_WORLD, u_step3, local_Ny, local_Nx, left, right, up, down,
                     send_left, send_right, send_up, send_down, recv_left, recv_right, recv_up, recv_down);
         halo_Update(u_step3, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
+
+        upd_ghost_nodes(u_step3, local_Ny, local_Nx, dy, dx, left, right, up, down, eta, k, T_out);
 
         //  ------------------------ K4 ---------------------//
         for (int j = 0; j < local_Ny; j++){
@@ -232,16 +235,15 @@ int main(){
         // Paso
         for (int j = 1; j < local_Ny+1; j++){
             for (int i = 1; i < local_Nx+1; i++){
-                u[j][i] += (k1[j][i] + 2*k2[j][i] + 2*k3[j][i] + 2*k4[j][i]) / 6;
+                u[j][i] += (k1[j][i] + 2*k2[j][i] + 2*k3[j][i] + k4[j][i]) / 6;
             }
         }
 
-        // Intercambio entre subdominios
-        info_exchange(MPI_COMM_WORLD, u, local_Ny, local_Nx, left, right, up, down,
-                    send_left, send_right, send_up, send_down, recv_left, recv_right, recv_up, recv_down);
-        halo_Update(u, local_Ny, local_Nx, left, right, up, down, recv_left, recv_right, recv_up, recv_down);
+        // Vemos no se supere la Temperatura segura
+        avisar_limiteT(u, local_Ny, local_Nx, T_limite, n*dt);
+        //printf("\n");
 
-
+        if (n % 10000 == 0 && rank == 0) printf("n=%d: %f\n",n,u[2][2]);
 
         // Animación
         if (animate){
@@ -356,7 +358,7 @@ void upd_ghost_nodes(float** u, int local_Ny, int local_Nx, float dy, float dx,
         }
         if (right < 0){ // Frontera Derecha
                 for (int j = 0; j < local_Ny; j++){
-                        u[j + 1][local_Nx + 1] = u[j + 1][Nx - 1] + (2*dx*eta) / k * (T_out - u[j + 1][local_Nx]);
+                        u[j + 1][local_Nx + 1] = u[j + 1][local_Nx - 1] + (2*dx*eta) / k * (T_out - u[j + 1][local_Nx]);
                 }
         }
 }
@@ -373,15 +375,15 @@ void info_exchange(MPI_Comm comm, float** matrizOrigen, int local_Ny, int local_
     }
     if (right > -1){ // Tiene vecino derecho
         MPI_Isend(send_right, local_Ny, MPI_FLOAT, right, 1, comm, &requests_k1[num_requests++] );
-                    MPI_Irecv(recv_right, local_Ny, MPI_FLOAT, right, 0, comm, &requests_k1[num_requests++] );
+        MPI_Irecv(recv_right, local_Ny, MPI_FLOAT, right, 0, comm, &requests_k1[num_requests++] );
             }
     if (up > -1){ // Tiene vecino superior
         MPI_Isend(send_up, local_Nx, MPI_FLOAT, up, 2, comm, &requests_k1[num_requests++] );
-                    MPI_Irecv(recv_up, local_Nx, MPI_FLOAT, up, 3, comm, &requests_k1[num_requests++] );
+        MPI_Irecv(recv_up, local_Nx, MPI_FLOAT, up, 3, comm, &requests_k1[num_requests++] );
             }
     if (down > -1){ // Tiene vecino inferior
         MPI_Isend(send_down, local_Nx, MPI_FLOAT, down, 3, comm, &requests_k1[num_requests++] );
-                    MPI_Irecv(recv_down, local_Nx, MPI_FLOAT, down, 2, comm, &requests_k1[num_requests++] );
+        MPI_Irecv(recv_down, local_Nx, MPI_FLOAT, down, 2, comm, &requests_k1[num_requests++] );
             }
 
     // Esperamos a los procesos
@@ -391,10 +393,10 @@ void info_exchange(MPI_Comm comm, float** matrizOrigen, int local_Ny, int local_
 
 void preparar_envio(float** matrizOrigen, int local_Ny, int local_Nx, int left, int right, int up, int down,
 		    float* send_left, float* send_right, float* send_up, float* send_down){
-	if (left > -1) for (int j = 0; j < local_Ny; j++) send_left[j] = matrizOrigen[j+1][0];
-	if (right > -1) for (int j = 0; j < local_Ny; j++) send_right[j] = matrizOrigen[j+1][local_Nx + 1];
-	if (up > -1) for (int i = 0; i < local_Ny; i++) send_up[i] = matrizOrigen[0][i +1];
-	if (down > -1) for (int i = 0; i < local_Ny; i++) send_down[i] = matrizOrigen[local_Ny + 1][i + 1];
+	if (left > -1) for (int j = 0; j < local_Ny; j++) send_left[j] = matrizOrigen[j+1][1];
+	if (right > -1) for (int j = 0; j < local_Ny; j++) send_right[j] = matrizOrigen[j+1][local_Nx];
+	if (up > -1) for (int i = 0; i < local_Nx; i++) send_up[i] = matrizOrigen[1][i +1];
+	if (down > -1) for (int i = 0; i < local_Nx; i++) send_down[i] = matrizOrigen[local_Ny][i + 1];
 }
 
 void halo_Update(float** subMatriz, int local_Ny, int local_Nx, int left, int right, int up, int down,
@@ -491,4 +493,19 @@ void save_ppm_frame(const char* filename, float** data, int n_filas, int n_colum
                 }
         }
         fclose(fp);
+}
+
+void avisar_limiteT(float** u, int local_Ny, float local_Nx, float T_limite, float t){
+    int T_danger = 0;
+    for (int j = 0; j < local_Ny; j++){
+        for (int i = 0; i<local_Nx; i++){
+            if (u[j+1][i+1] >= T_limite){
+                T_danger = 1;
+                printf("Temperatura: %f \nHa superado el margen seguro al tiempo %f\n------------------------------------\n", u[j+1][i+1], t);
+                break;
+            }
+        }
+        if (T_danger) break;
+
+    }
 }
